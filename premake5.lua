@@ -79,42 +79,36 @@ project("readline")
     excludes("readline/vi_keymap.c")    -- #included by readline/keymaps.c
 
 --------------------------------------------------------------------------------
-project("getopt")
-    language("c")
-    kind("staticlib")
-    files("getopt/*")
-
---------------------------------------------------------------------------------
---[[
 project("compat")
     language("c")
     kind("staticlib")
     flags("fatalwarnings")
+    includedirs("compat")
     includedirs("readline")
+    includedirs("..")
     files("compat/*.c")
     files("compat/*.h")
---]]
 
 --------------------------------------------------------------------------------
---[[
 project("c_sample")
     targetname("c_sample")
+    language("c")
     kind("consoleapp")
     flags("fatalwarnings")
-    language("c")
+    includedirs("compat")
+    includedirs("readline")
+    includedirs(".")
     links("compat")
-    links("getopt")
     links("readline")
-    links("c_sample.c")
---]]
+    files("c_sample.c")
 
 --------------------------------------------------------------------------------
 --[[
 project("cpp_sample")
     targetname("cpp_sample")
+    language("c++")
     kind("consoleapp")
     flags("fatalwarnings")
-    language("c++")
     links("compat")
     links("getopt")
     links("readline")
