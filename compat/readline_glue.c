@@ -1,3 +1,5 @@
+#define READLINE_LIBRARY
+
 #include <config.h>
 #include <rlmbutil.h>
 

@@ -71,7 +71,7 @@ project("readline")
     defines("BUILD_READLINE")           -- so config.h can configure for readline or for the host
     includedirs("compat")
     includedirs("readline")
-    includedirs("..")                   -- work around a typo in xmalloc.h that includes readline/rlstdc.h instead of just rlstdc.h
+    includedirs("..")                   -- work around tilde.c neglecting to #define READLINE_LIBRARY
     files("readline/*.c")
     files("readline/*.h")
 
@@ -85,7 +85,6 @@ project("compat")
     flags("fatalwarnings")
     includedirs("compat")
     includedirs("readline")
-    includedirs("..")
     files("compat/*.c")
     files("compat/*.h")
 

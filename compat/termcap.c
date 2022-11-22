@@ -2,6 +2,8 @@
 // Portions lifted from Clink (https://github.com/chrisant996/clink)
 // under the MIT license (http://opensource.org/licenses/MIT).
 
+#define READLINE_LIBRARY // Remove this if you use this file apart from Readline.
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
