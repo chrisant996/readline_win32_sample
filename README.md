@@ -1,6 +1,7 @@
 # Title
 
 - _TBD: Describe purpose of this repo._
+- _TBD: Include link to Readline repo and documentation._
 
 ## Compiling Readline on Windows
 
@@ -33,4 +34,5 @@ The repo root contains the sample program, license file, Premake script, and REA
 
 ## Details
 
-- _TBD: Explain the `compat\` source code.
+- _TBD: Explain the `compat\` source code._
+- _TBD: Remind about brackets escape codes in the prompt string._

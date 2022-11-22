@@ -52,7 +52,7 @@ int main(int argc, char **argv)
     for (;;)
     {
         // Call readline to read a line of input.
-        char *input = readline("\x1b[92mPrompt>\x1b[m ");
+        char *input = readline("\x01\x1b[92m\x02Prompt>\x01\x1b[m\x02 ");
         if (input == 0)
             break;
 
