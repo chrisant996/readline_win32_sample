@@ -1,12 +1,12 @@
 diff --git a/input.c b/input.c
-index 6f038d4..e3c23af 100644
+index 6f038d4..d96b478 100644
 --- a/input.c
 +++ b/input.c
 @@ -140,18 +140,22 @@ win32_isatty (int fd)
  
  /* I don't know how to set a timeout for _getch() in MinGW32, so we use
     SIGALRM. */
-+#if 0
++#if !defined (_WIN32)
  #if (defined (HAVE_PSELECT) || defined (HAVE_SELECT)) && !defined (__MINGW32__)
  #  define RL_TIMEOUT_USE_SELECT
  #else
@@ -19,7 +19,7 @@ index 6f038d4..e3c23af 100644
  
  int _rl_timeout_init (void);
  int _rl_timeout_sigalrm_handler (void);
-+#if 0
++#if !defined (_WIN32)
  int _rl_timeout_select (int, fd_set *, fd_set *, fd_set *, const struct timeval *, const sigset_t *);
 +#endif
  
@@ -29,7 +29,7 @@ index 6f038d4..e3c23af 100644
  #  endif
  #endif
  
-+#if 0
++#if !defined (_WIN32)
  /* Set a timeout which will be used for the next call of `readline
     ()'.  When (0, 0) are specified the timeout is cleared.  */
  int
@@ -45,7 +45,7 @@ index 6f038d4..e3c23af 100644
  
  /* This should only be called if RL_TIMEOUT_USE_SELECT is defined. */
  
-+#if 0
++#if !defined (_WIN32)
 +
  #if defined (HAVE_PSELECT) || defined (HAVE_SELECT)
  int
@@ -91,8 +91,21 @@ index 4cf933b..2695b1b 100644
  #include <windows.h>
  
  int
+diff --git a/misc.c b/misc.c
+index 4bca9c5..b2b1964 100644
+--- a/misc.c
++++ b/misc.c
+@@ -693,7 +693,7 @@ static int saved_history_logical_offset = -1;
+ #define HISTORY_FULL() (history_is_stifled () && history_length >= history_max_entries)
+ 
+ static int
+-set_saved_history ()
++set_saved_history (void)
+ {
+   int absolute_offset, count;
+ 
 diff --git a/rldefs.h b/rldefs.h
-index 98577a6..c49af8b 100644
+index 98577a6..dfb1320 100644
 --- a/rldefs.h
 +++ b/rldefs.h
 @@ -40,7 +40,7 @@
@@ -100,19 +113,19 @@ index 98577a6..c49af8b 100644
  #    define TERMIO_TTY_DRIVER
  #  else
 -#    if !defined (__MINGW32__)
-+#    if !defined (__MINGW32__) && 0
++#    if !defined (__MINGW32__) && !defined (_WIN32)
  #      define NEW_TTY_DRIVER
  #    else
  #      define NO_TTY_DRIVER
 diff --git a/rlprivate.h b/rlprivate.h
-index d87d07a..08e98f5 100644
+index d87d07a..3e370b8 100644
 --- a/rlprivate.h
 +++ b/rlprivate.h
 @@ -303,10 +303,12 @@ extern int _rl_pushed_input_available (void);
  
  extern int _rl_timeout_init (void);
  extern int _rl_timeout_handle_sigalrm (void);
-+#if 0
++#if !defined (_WIN32)
  #if defined (_POSIXSELECT_H_)
  /* use as a sentinel for fd_set, struct timeval,  and sigset_t definitions */
  extern int _rl_timeout_select (int, fd_set *, fd_set *, fd_set *, const struct timeval *, const sigset_t *);
