@@ -1,5 +1,21 @@
 #pragma once
 
+//------------------------------------------------------------------------------
+// HELPER FUNCTIONS FOR INTEGRATING WITH READLINE ON WINDOWS
+
+// Call config_console() before using Readline (e.g. before calling
+// readline()).  This saves the console mode and adjusts the console mode for
+// reading one character at a time, so that Readline can read input.
+extern int config_console(void);
+
+// Call unconfig_console() after using Readline (e.g. after readline()
+// returns).  This restores the console mode so that any other reading can
+// still work properly.
+extern void unconfig_console(void);
+
+//------------------------------------------------------------------------------
+// READLINE INTERNAL GLUE
+
 #include <conio.h>
 #include <io.h>
 #include <limits.h>
@@ -117,10 +133,14 @@ typedef unsigned short      mode_t;
 // guard usage safely in Windows.  Work around the problem by including
 // winsock.h; however, it slows down compilation time significantly.
 #define HAVE_TIMEVAL 1
+#if defined (READLINE_LIBRARY)
 struct timeval {
     time_t tv_sec;
     long tv_usec;
 };
+#else
+struct timeval; // Just a forward declaration to avoid collision with winsock.h.
+#endif
 #define HAVE_GETTIMEOFDAY 1
 typedef int sigset_t;               // satisfy compilation.
 extern int gettimeofday(struct timeval * tp, struct timezone * tzp);
@@ -129,6 +149,3 @@ typedef int wcwidth_t (char32_t);
 typedef int wcswidth_t (const char32_t*, size_t);
 extern wcwidth_t *wcwidth;
 extern wcswidth_t *wcswidth;
-
-extern int config_console(void);
-extern void unconfig_console(void);
