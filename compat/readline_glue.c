@@ -5,9 +5,8 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <VersionHelpers.h>
 
-#include <stdint.h> // portable: uint64_t   MSVC: __int64 
+#include <stdint.h> // portable: uint64_t   MSVC: __int64
 #include <uchar.h> // for char32_t
 
 #include "support/wcwidth.c"
@@ -37,56 +36,4 @@ int gettimeofday(struct timeval * tp, struct timezone * tzp)
     tp->tv_sec  = (long) ((time - EPOCH) / 10000000L);
     tp->tv_usec = (long) (system_time.wMilliseconds * 1000);
     return 0;
-}
-
-static BOOL s_have_saved_modes = 0;
-static DWORD s_saved_input_mode = 0;
-static DWORD s_saved_output_mode = 0;
-
-int config_console(void)
-{
-    DWORD inmode;
-    DWORD outmode;
-    HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
-    HANDLE hout = GetStdHandle(STD_OUTPUT_HANDLE);
-
-    if (s_have_saved_modes)
-    {
-        inmode = s_saved_input_mode;
-        outmode = s_saved_output_mode;
-    }
-    else
-    {
-        GetConsoleMode(hin, &inmode);
-        GetConsoleMode(hout, &outmode);
-        s_saved_input_mode = inmode;
-        s_saved_output_mode = outmode;
-        s_have_saved_modes = TRUE;
-    }
-
-    inmode &= ~(ENABLE_PROCESSED_INPUT|ENABLE_LINE_INPUT|ENABLE_ECHO_INPUT|ENABLE_MOUSE_INPUT);
-    inmode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
-    // outmode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    SetConsoleMode(hin, inmode);
-    // SetConsoleMode(hout, outmode);
-
-    // Windows 8.1 or greater is needed for the virtual terminal escape code
-    // sequences that Readline requires.  On older versions of Windows Readline
-    // will display incorrectly.  But changes in the GetVersion() API make it
-    // impossible to accurately detect Windows 8.1 without a manifest, so when
-    // this function returns false it's inconclusive whether Windows 8.1 is
-    // present.
-    return IsWindows8Point1OrGreater();
-}
-
-void unconfig_console(void)
-{
-    if (s_have_saved_modes)
-    {
-        HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
-        HANDLE hout = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleMode(hin, s_saved_input_mode);
-        SetConsoleMode(hout, s_saved_output_mode);
-        s_have_saved_modes = FALSE;
-    }
 }

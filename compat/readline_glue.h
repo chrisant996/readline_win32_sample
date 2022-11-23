@@ -13,70 +13,44 @@ extern int config_console(void);
 // still work properly.
 extern void unconfig_console(void);
 
+// For diagnostic purposes.  Pass <=0 to disable, pass 1 to enable verbose
+// input diagnostic output, or pass >1 to print verbose diagnostic output at
+// the top of the terminal display.
+extern void set_verbose_input(int verbose);
+
 //------------------------------------------------------------------------------
 // READLINE INTERNAL GLUE
 
-#include <conio.h>
 #include <io.h>
 #include <limits.h>
 #include <process.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/stat.h>
-#include <wchar.h>
+// #include <sys/stat.h>
+// #include <wchar.h>
 #include <uchar.h>
 
 #if !defined(__cplusplus) && !defined(_MSC_VER)
 #define static_assert _Static_assert
 #endif
 
-int     compare_string(const char* s1, const char* s2, int casefold);
-
 /*
-// for purposes of utf-8 and capturing stdio
-int     hooked_fwrite(const void*, int, int, FILE*);
-void    hooked_fprintf(FILE*, const char*, ...);
-int     hooked_putc(int, FILE*);
-void    hooked_fflush(FILE*);
-int     hooked_fileno(FILE*);
 int     hooked_stat(const char*, struct hooked_stat*);
 int     hooked_lstat(const char*, struct hooked_stat*);
 int     hooked_fstat(int, struct hooked_stat*);
-int     mk_wcwidth(char32_t);
-int     mk_wcswidth(const char32_t *, size_t);
 */
 
 #if defined(__MINGW32__)
-#   undef fwrite
-#   undef fprintf
-#   undef putc
-#   undef fflush
-#   undef fileno
-/*
-#   undef mbrtowc
-#   undef mbrlen
-*/
 #   undef stat
 #   undef fstat
-#   define __MSDOS__
-
 // For consistency, make mingw compile Readline the same way msvc does.
 #   if defined(BUILD_READLINE)
 #       undef __MINGW32__
 #   endif
-
-/*
-#   define RL_LIBRARY_VERSION "8.2"
-*/
 #endif // __MINGW32__
 
 #if defined(BUILD_READLINE)
 /*
-#   define fwrite           hooked_fwrite
-#   define fprintf          hooked_fprintf
-#   define putc             hooked_putc
-#   define fflush           hooked_fflush
-#   define fileno           hooked_fileno
 #   define stat             hooked_stat
 #   define lstat            hooked_lstat
 #   define fstat            hooked_fstat
@@ -101,10 +75,6 @@ typedef ptrdiff_t           ssize_t;
 typedef unsigned short      mode_t;
 
 #   define __STDC__         0
-/*
-#   define __MINGW32__
-#   define __WIN32__
-*/
 
 #   pragma warning(disable : 4018)  // signed/unsigned mismatch
 #   pragma warning(disable : 4090)  // different 'const' qualifiers
@@ -130,8 +100,9 @@ typedef unsigned short      mode_t;
 #endif
 
 // Readline 8.2 added usage of posixtime.h and posixselect.h, and does not
-// guard usage safely in Windows.  Work around the problem by including
-// winsock.h; however, it slows down compilation time significantly.
+// guard usage safely in Windows.  When building READLINE_LIBRARY, define the
+// timeval struct; otherwise use a forward reference to allow compilation
+// while avoiding collision with winsock.h.
 #define HAVE_TIMEVAL 1
 #if defined (READLINE_LIBRARY)
 struct timeval {
@@ -139,7 +110,7 @@ struct timeval {
     long tv_usec;
 };
 #else
-struct timeval; // Just a forward declaration to avoid collision with winsock.h.
+struct timeval;
 #endif
 #define HAVE_GETTIMEOFDAY 1
 typedef int sigset_t;               // satisfy compilation.

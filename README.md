@@ -10,6 +10,8 @@ The sample code in this repo is based on my experience with using Readline in th
 
 **LICENSE:**  This sample is distributed under the [GNU General Public License v3](https://github.com/chrisant996/readline_win32_sample/blob/main/LICENSE).
 
+> **Warning:**  This sample is for illustration purposes only.  Do not use it in production software.  You are solely responsible for using Readline correctly and any problems that may arise.
+
 ## Prequisites
 
 You'll need the following:
@@ -70,7 +72,9 @@ For Readline to work properly, the input codepage needs to be UTF8.
 
 The sample program in this repo sets the C runtime to use UTF8 as the input/output locale.
 
-However, that also affects the rest of your program.  You'll need to make sure your program handles UTF8 correctly, or things will be wrong.
+However, that also affects the rest of your program.  You'll need to make sure your program handles UTF8 correctly everywhere, or things will be wrong.
+
+> **Warning:** If the program isn't properly prepared for the C runtime to be using UTF8, then the problematic effects will not be limited to just input.  Everywhere the program uses the C runtime library, UTF8 inputs and outputs will be expected, and things can go wrong if the program isn't handling UTF8 correctly.
 
 The sample contains two functions that can help ease the transition somewhat:
 - `config_console()` sets the C runtime to use UTF8.
@@ -101,16 +105,9 @@ Your program should check the Windows version to determine whether VT emulation 
 
 Readline requires VT input emulation to be able to process input key bindings.
 
-Windows 10 build 16299 and higher have VT input emulation built-in.
+This sample repo uses a custom input callback which provides VT input emulation on all versions of Windows (see the `read.c` file).
 
-But you'll likely want your program to work on older versions of Windows, as well.
-
-By default, this sample repo uses a custom read callback which provides VT input emulation on all versions of Windows.
-> _**TBD:** The repo does not yet a custom read callback, but it is coming soon!_
-
-However, it is optional, and other alternatives include:
-- You could make your program fall back to using something other than Readline on OS versions before Windows 10 build 16299.  To detect this you must properly [target your application](https://learn.microsoft.com/en-us/windows/win32/sysinfo/targeting-your-application-at-windows-8-1) with a manifest and use the version APIs to get the Windows build number.
-- You could supply your own alternative read callback.
+Alternatively, you could supply your own custom input callback by setting `rl_getc_function` after calling `config_console()`.
 
 ### Readline versions
 

@@ -29,6 +29,9 @@ static void fix_stdin_to_binary(void)
 
 int main(int argc, char **argv)
 {
+    if (getenv("VERBOSE_INPUT"))
+        set_verbose_input(atoi(getenv("VERBOSE_INPUT")));
+
     // Set a Ctrl-C and Ctrl-Break handler to restore the console input and
     // output modes.  Otherwise input and output may not work properly in the
     // console window anymore after this program is aborted.
