@@ -71,7 +71,7 @@ project("readline")
     defines("BUILD_READLINE")           -- so config.h can configure for readline or for the host
     includedirs("compat")
     includedirs("readline")
-    includedirs("..")                   -- work around tilde.c neglecting to #define READLINE_LIBRARY
+    includedirs(".")                    -- work around tilde.c neglecting to #define READLINE_LIBRARY
     files("readline/*.c")
     files("readline/*.h")
 
