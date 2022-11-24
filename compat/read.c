@@ -45,8 +45,16 @@ static const char* const khome[] = { CSI(H),  CSI(1;2H), CSI(1;5H), CSI(1;6H), C
 static const char* const kend[]  = { CSI(F),  CSI(1;2F), CSI(1;5F), CSI(1;6F), CSI(1;3F), CSI(1;4F), CSI(1;7F), CSI(1;8F) }; // end
 static const char* const kpp[]   = { CSI(5~), CSI(5;2~), CSI(5;5~), CSI(5;6~), CSI(5;3~), CSI(5;4~), CSI(5;7~), CSI(5;8~) }; // pgup
 static const char* const knp[]   = { CSI(6~), CSI(6;2~), CSI(6;5~), CSI(6;6~), CSI(6;3~), CSI(6;4~), CSI(6;7~), CSI(6;8~) }; // pgdn
+#ifdef DIFFERENTIATE_BACKSPACE_MODIFIERS
 static const char* const kbks[]  = { "\b",    MOK(2;8),  "\x7f",    MOK(6;8),  "\x1b\b",  MOK(4;8),  "\x1b\x7f",MOK(8;8)  }; // bkspc
+#else
+static const char* const kbks[]  = { "\b",    "\b",      "\x7f",    "\x7f",    "\x1b\b",  "\x1b\b",  "\x1b\x7f","\x1b\x7f"}; // bkspc
+#endif
+#ifdef DIFFERENTIATE_ENTER_MODIFIERS
 static const char* const kret[]  = { "\r",    MOK(2;13), MOK(5;13), MOK(6;13), MOK(3;13), MOK(4;13), MOK(7;13), MOK(8;13) }; // enter (return)
+#else
+static const char* const kret[]  = { "\r",    "\r",      "\r",      "\r",      "",        "",        "",        ""        }; // enter (return)
+#endif
 static const char* const kcbt    = CSI(Z);
 static const char* const kaltO   = CSI(27;4;79~);
 static const char* const kaltlb  = CSI(27;3;91~);
@@ -94,7 +102,11 @@ static const char* const kfx[]   = {
 
 //                                            Shf     Ctl         CtlShf      Alt   AtlShf   AltCtl      AltCtlShf
 static const char* const ktab[]  = { "\t",    CSI(Z), MOK(5;9),   MOK(6;9),   "",   "",      "",         ""         }; // TAB
+#ifdef DIFFERENTIATE_SPACE_MODIFIERS
 static const char* const kspc[]  = { " ",  MOK(2;32), MOK(5;32),  MOK(6;32),  "",   "",      MOK(7;32),  MOK(8;32)  }; // SPC
+#else
+static const char* const kspc[]  = { " ",  " ",       " ",        " ",        "",   "",      "",         ""         }; // SPC
+#endif
 
 //                                   Hide       Show
 static const char* const kcrsr[] = { CSI(?25l), CSI(?25h) };
@@ -492,7 +504,7 @@ static void process_input(const KEY_EVENT_RECORD* record)
     }
 
     // Special case for ctrl-shift-I (to behave like shift-tab aka. back-tab).
-#if !defined (DIFFERENTIATE_KEYS)
+#if !defined (DIFFERENTIATE_CTRL_CHARS)
     if (key_char == '\t' && !s_term.m_buffer_count && (key_flags & SHIFT_PRESSED))
     {
         input_push_seq(kcbt);
@@ -514,7 +526,7 @@ static void process_input(const KEY_EVENT_RECORD* record)
     {
         int simple_char;
 
-#ifdef DIFFERENTIATE_KEYS
+#ifdef DIFFERENTIATE_CTRL_CHARS
         const int differentiate_keys = true;
 #else
         const int differentiate_keys = false;
@@ -579,7 +591,7 @@ static void process_input(const KEY_EVENT_RECORD* record)
             case 'Q':   case 'R':   case 'S':   case 'T':
             case 'U':   case 'V':   case 'W':   case 'X':
             case 'Y':   case 'Z':
-#ifdef DIFFERENTIATE_KEYS
+#ifdef DIFFERENTIATE_CTRL_CHARS
                 if (key_vk == 'H' || key_vk == 'I' || key_vk == 'M')
                     goto not_ctrl;
 #endif
@@ -587,14 +599,14 @@ static void process_input(const KEY_EVENT_RECORD* record)
                 ctrl_code = true;
                 break;
             case '2':
-#ifdef DIFFERENTIATE_KEYS
+#ifdef DIFFERENTIATE_CTRL_CHARS
                 if (!(key_flags & SHIFT_PRESSED))
                     goto not_ctrl;
 #endif
                 key_vk = 0;
                 break;
             case '6':
-#ifdef DIFFERENTIATE_KEYS
+#ifdef DIFFERENTIATE_CTRL_CHARS
                 if (!(key_flags & SHIFT_PRESSED))
                     goto not_ctrl;
 #endif
@@ -614,7 +626,7 @@ static void process_input(const KEY_EVENT_RECORD* record)
                 switch (key_char)
                 {
                 case 0x1b:
-#ifdef DIFFERENTIATE_KEYS
+#ifdef DIFFERENTIATE_CTRL_CHARS
                     goto not_ctrl;
 #endif
                     // fall thru
@@ -623,7 +635,7 @@ static void process_input(const KEY_EVENT_RECORD* record)
                     key_vk = key_char;
                     break;
                 default:
-#ifdef DIFFERENTIATE_KEYS
+#ifdef DIFFERENTIATE_CTRL_CHARS
 not_ctrl:
 #endif
                     if (!translate_ctrl_bracket(&key_vk, key_sc))
