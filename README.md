@@ -1,4 +1,4 @@
-# Title
+# Using Readline in Windows
 
 This repo demonstrates how to compile and link the [GNU Readline library](https://tiswww.case.edu/php/chet/readline/rltop.html) in a Windows console application.
 
@@ -66,6 +66,16 @@ premake5 vs2019
 
 Next, invoke your compiler to build using the generated project files.  For example, with Visual Studio you could open the `.build/vs2019/sample.sln` file and then press <kbd>F5</kbd> to build and run the sample.
 
+## Input mode
+
+The sample contains two functions that handle ensuring the console mode can support Readline:
+- `config_console()` saves the current console mode, and adjusts the console mode to support Readline input.
+- `unconfig_console()` restores the saved console mode.
+
+Call `config_console()` before calling Readline, otherwise input won't work correctly in Readline.
+
+Call `unconfig_console()` after Readline returns, otherwise input won't work correctly outside of Readline.
+
 ## IMPORTANT:  UTF8, ACP, -`A`, and -`W` APIs
 
 For Readline to work properly, the input codepage needs to be UTF8.
@@ -75,10 +85,6 @@ The sample program in this repo sets the C runtime to use UTF8 as the input/outp
 However, that also affects the rest of your program.  You'll need to make sure your program handles UTF8 correctly everywhere, or things will be wrong.
 
 > **Warning:** If the program isn't properly prepared for the C runtime to be using UTF8, then the problematic effects will not be limited to just input.  Everywhere the program uses the C runtime library, UTF8 inputs and outputs will be expected, and things can go wrong if the program isn't handling UTF8 correctly.
-
-The sample contains two functions that can help ease the transition somewhat:
-- `config_console()` sets the C runtime to use UTF8.
-- `unconfig_console()` sets the C runtime back to the default, which is to use ACP (Active Code Page).
 
 You may need to use [`MultiByteToWideChar()`](https://learn.microsoft.com/en-us/windows/win32/api/stringapiset/nf-stringapiset-multibytetowidechar) and other conversion APIs to correctly handle converting between ACP, UTF8, and UTF16 depending on the needs of your program.
 
@@ -115,4 +121,4 @@ Some notes on specific Readline versions:
 
 - Readline 8.2 can't be used (yet) without modifying Readline sources, because it introduced some new "timeout" stuff which is not guarded sufficiently and produces compilation errors.  The included patch file works around the compilation errors, until an official patch is available.
 - Readline 8.1 can't be used without modifying Readline sources, because it introduced a compilation issue in `signals.c` by moving `sigprocmask` usage outside of a `HAVE_POSIX_SIGNALS` check.
-- Readline 8.0 and earlier aren't viable.  They can be compiled by modifying a single line in the Readline sources.  But the UTF8 support has a crucial problem:  apparently on Unix `wchar_t` is 32 bits, but on Windows it is 16 bits.  That causes UTF8 support to malfunction on Windows.  The [Clink](https://github.com/chrisant996/clink) project contributed a fix for that in the Readline 8.1 timeframe.
+- Readline 8.0 and earlier aren't viable for use on Windows unless the input is ASCII and `HANDLE_MULTIBYTE` is disabled.  It can be compiled by modifying a single line in the Readline sources.  But the UTF8 support has a crucial problem:  apparently on Unix `wchar_t` is 32 bits, but on Windows it is 16 bits.  That causes UTF8 support to malfunction on Windows.  The [Clink](https://github.com/chrisant996/clink) project contributed a fix for that in the Readline 8.1 timeframe.
