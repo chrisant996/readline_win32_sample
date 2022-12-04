@@ -12,6 +12,12 @@
 
 #include <assert.h>
 
+// You may define FORCE_WIN10_16299_VT_INPUT to force using the
+// ENABLE_VIRTUAL_TERMINAL_INPUT console mode.  But the mode is only available
+// in Windows 10 build 16299 and higher, and it implements only a subset of VT
+// input sequences.
+//#ifdef FORCE_WIN10_16299_VT_INPUT
+
 #define true                    (1)
 #define false                   (0)
 
@@ -33,6 +39,8 @@ void set_verbose_input(int verbose)
 #define ACSI(x) "\x1b\x1b[" #x
 #define ASS3(x) "\x1b\x1bO" #x
 #define MOK(x) "\x1b[27;" #x "~"
+
+#ifndef FORCE_WIN10_16299_VT_INPUT
 
 //                                            Shf        Ctl        CtlShf     Alt        AtlShf     AltCtl     AltCtlShf
 static const char* const kcuu1[] = { CSI(A),  CSI(1;2A), CSI(1;5A), CSI(1;6A), CSI(1;3A), CSI(1;4A), CSI(1;7A), CSI(1;8A) }; // up
@@ -108,9 +116,6 @@ static const char* const kspc[]  = { " ",  MOK(2;32), MOK(5;32),  MOK(6;32),  ""
 static const char* const kspc[]  = { " ",  " ",       " ",        " ",        "",   "",      "",         ""         }; // SPC
 #endif
 
-//                                   Hide       Show
-static const char* const kcrsr[] = { CSI(?25l), CSI(?25h) };
-
 static int xterm_modifier(int key_flags)
 {
     int i = 0;
@@ -162,8 +167,7 @@ static int is_vk_recognized(int key_vk)
     }
 }
 
-#undef SS3
-#undef CSI
+#endif // !FORCE_WIN10_16299_VT_INPUT
 
 /*
  * Terminal state structure.
@@ -205,10 +209,17 @@ static struct terminal_state s_term = { 0 };
  * Internal helpers.
  */
 
+static const char* const crsr[] =
+{
+    CSI(?25l),  // Hide cursor.
+    CSI(?25h),  // Show cursor.
+};
+
 static void show_cursor(int show)
 {
+    /* Using VT sequence avoids altering cursor shape in Windows Terminal. */
     assert(s_term.m_initialized);
-    const char* s = kcrsr[!!show];
+    const char* s = crsr[!!show];
     DWORD written;
     WriteConsoleA(s_term.m_stdout, s, strlen(s), &written, NULL);
 }
@@ -221,6 +232,73 @@ static unsigned int get_dimensions()
     short cols = (short)(csbi.dwSize.X);
     short rows = (short)(csbi.srWindow.Bottom - csbi.srWindow.Top) + 1;
     return (cols << 16) | rows;
+}
+
+static const wchar_t* key_name_from_vk(int key_vk, int scan)
+{
+    UINT key_scan = scan ? scan : MapVirtualKeyW(key_vk, MAPVK_VK_TO_VSC);
+    if (key_scan)
+    {
+        LONG l = (key_scan & 0x01ff) << 16;
+        static wchar_t name[16];
+        if (GetKeyNameTextW(l, name, sizeof(name) / sizeof(*name)))
+            return name;
+    }
+    return NULL;
+}
+
+static void verbose_input(const KEY_EVENT_RECORD* record)
+{
+    int key_char = record->uChar.UnicodeChar;
+    int key_vk = record->wVirtualKeyCode;
+    int key_sc = record->wVirtualScanCode;
+    int key_flags = record->dwControlKeyState;
+
+    const wchar_t* key_name = key_name_from_vk(key_vk, key_sc);
+
+    const wchar_t* pro = (s_verbose_input > 1) ? L"\x1b[s\x1b[H" : L"";
+    const wchar_t* epi = (s_verbose_input > 1) ? L"\x1b[K\x1b[u" : L"\n";
+
+    wprintf(L"%skey event:  %c%c%c %c%c  flags=0x%08.8x  char=0x%04.4x  vk=0x%04.4x  scan=0x%04.4x  \"%s\"%s",
+            pro,
+            (key_flags & SHIFT_PRESSED) ? 'S' : '_',
+            (key_flags & LEFT_CTRL_PRESSED) ? 'C' : '_',
+            (key_flags & LEFT_ALT_PRESSED) ? 'A' : '_',
+            (key_flags & RIGHT_ALT_PRESSED) ? 'A' : '_',
+            (key_flags & RIGHT_CTRL_PRESSED) ? 'C' : '_',
+            key_flags,
+            key_char,
+            key_vk,
+            key_sc,
+            key_name ? key_name : L"UNKNOWN",
+            epi);
+}
+
+static void fix_console_input_mode()
+{
+    assert(s_term.m_initialized);
+
+    DWORD modeIn;
+    if (GetConsoleMode(s_term.m_stdin, &modeIn))
+    {
+        DWORD mode = modeIn;
+
+        // Compensate when this is reached with the console mode set wrong.
+        // For example, this can happen when Lua code uses io.popen():lines()
+        // and returns without finishing reading the output, or uses
+        // os.execute() in a coroutine.
+        mode &= ~ENABLE_PROCESSED_INPUT;
+
+        if (mode != modeIn)
+            SetConsoleMode(s_term.m_stdin, mode);
+    }
+}
+
+static void fix_console_output_mode(HANDLE h, DWORD modeExpected)
+{
+    DWORD modeActual;
+    if (GetConsoleMode(h, &modeActual) && modeActual != modeExpected)
+        SetConsoleMode(h, modeExpected);
 }
 
 // Use unsigned; WCHAR and unsigned short can give wrong results.
@@ -324,72 +402,7 @@ static unsigned char input_peek()
     return s_term.m_buffer[s_term.m_buffer_head];
 }
 
-static void fix_console_input_mode()
-{
-    assert(s_term.m_initialized);
-
-    DWORD modeIn;
-    if (GetConsoleMode(s_term.m_stdin, &modeIn))
-    {
-        DWORD mode = modeIn;
-
-        // Compensate when this is reached with the console mode set wrong.
-        // For example, this can happen when Lua code uses io.popen():lines()
-        // and returns without finishing reading the output, or uses
-        // os.execute() in a coroutine.
-        mode &= ~ENABLE_PROCESSED_INPUT;
-
-        if (mode != modeIn)
-            SetConsoleMode(s_term.m_stdin, mode);
-    }
-}
-
-static void fix_console_output_mode(HANDLE h, DWORD modeExpected)
-{
-    DWORD modeActual;
-    if (GetConsoleMode(h, &modeActual) && modeActual != modeExpected)
-        SetConsoleMode(h, modeExpected);
-}
-
-static const wchar_t* key_name_from_vk(int key_vk, int scan)
-{
-    UINT key_scan = scan ? scan : MapVirtualKeyW(key_vk, MAPVK_VK_TO_VSC);
-    if (key_scan)
-    {
-        LONG l = (key_scan & 0x01ff) << 16;
-        static wchar_t name[16];
-        if (GetKeyNameTextW(l, name, sizeof(name) / sizeof(*name)))
-            return name;
-    }
-    return NULL;
-}
-
-static void verbose_input(const KEY_EVENT_RECORD* record)
-{
-    int key_char = record->uChar.UnicodeChar;
-    int key_vk = record->wVirtualKeyCode;
-    int key_sc = record->wVirtualScanCode;
-    int key_flags = record->dwControlKeyState;
-
-    const wchar_t* key_name = key_name_from_vk(key_vk, key_sc);
-
-    const wchar_t* pro = (s_verbose_input > 1) ? L"\x1b[s\x1b[H" : L"";
-    const wchar_t* epi = (s_verbose_input > 1) ? L"\x1b[K\x1b[u" : L"\n";
-
-    wprintf(L"%skey event:  %c%c%c %c%c  flags=0x%08.8x  char=0x%04.4x  vk=0x%04.4x  scan=0x%04.4x  \"%s\"%s",
-            pro,
-            (key_flags & SHIFT_PRESSED) ? 'S' : '_',
-            (key_flags & LEFT_CTRL_PRESSED) ? 'C' : '_',
-            (key_flags & LEFT_ALT_PRESSED) ? 'A' : '_',
-            (key_flags & RIGHT_ALT_PRESSED) ? 'A' : '_',
-            (key_flags & RIGHT_CTRL_PRESSED) ? 'C' : '_',
-            key_flags,
-            key_char,
-            key_vk,
-            key_sc,
-            key_name ? key_name : L"UNKNOWN",
-            epi);
-}
+#ifndef FORCE_WIN10_16299_VT_INPUT
 
 // Try to handle Alt-Ctrl-[, Alt-Ctrl-], Alt-Ctrl-\ better, at least in keyboard
 // layouts where the [, ], or \ is the regular (unshifted) name of the key.
@@ -413,45 +426,8 @@ static int translate_ctrl_bracket(int* key_vk, int key_sc)
     }
 }
 
-static void process_input(const KEY_EVENT_RECORD* record)
+static void vt_emulation(int key_char, int key_vk, int key_sc, int key_flags)
 {
-    assert(s_term.m_initialized);
-
-    int key_char = record->uChar.UnicodeChar;
-    int key_vk = record->wVirtualKeyCode;
-    int key_sc = record->wVirtualScanCode;
-    int key_flags = record->dwControlKeyState;
-
-    // Only respond to key down events.
-    if (!record->bKeyDown)
-    {
-        // Some times conhost can send through ALT codes, with the resulting
-        // Unicode code point in the Alt key-up event.
-        if (key_vk == VK_MENU && key_char)
-            key_flags = 0;
-        else
-            return;
-    }
-
-    // We filter out Alt key presses unless they generated a character.
-    if (key_vk == VK_MENU)
-    {
-        if (key_char)
-        {
-            if (s_verbose_input)
-                verbose_input(record);
-            input_push_wchar(key_char);
-        }
-        return;
-    }
-
-    // Early out of unaccompanied Ctrl/Shift/Windows key presses.
-    if (key_vk == VK_CONTROL || key_vk == VK_SHIFT || key_vk == VK_LWIN || key_vk == VK_RWIN)
-        return;
-
-    if (s_verbose_input)
-        verbose_input(record);
-
     // Windows supports an AltGr substitute which we check for here and ignore.
     if (key_flags & LEFT_ALT_PRESSED)
     {
@@ -670,6 +646,64 @@ not_ctrl:
     }
 }
 
+#endif // !FORCE_WIN10_16299_VT_INPUT
+
+static void process_input(const KEY_EVENT_RECORD* record)
+{
+    assert(s_term.m_initialized);
+
+    int key_char = record->uChar.UnicodeChar;
+    int key_vk = record->wVirtualKeyCode;
+    int key_sc = record->wVirtualScanCode;
+    int key_flags = record->dwControlKeyState;
+
+    // Only respond to key down events.
+    if (!record->bKeyDown)
+    {
+        // Some times conhost can send through ALT codes, with the resulting
+        // Unicode code point in the Alt key-up event.
+        if (key_vk == VK_MENU && key_char)
+            key_flags = 0;
+        else
+            return;
+    }
+
+    // We filter out Alt key presses unless they generated a character.
+    if (key_vk == VK_MENU)
+    {
+        if (key_char)
+        {
+            if (s_verbose_input)
+                verbose_input(record);
+            input_push_wchar(key_char);
+        }
+        return;
+    }
+
+    // Early out of unaccompanied Ctrl/Shift/Windows key presses.
+    if (key_vk == VK_CONTROL || key_vk == VK_SHIFT || key_vk == VK_LWIN || key_vk == VK_RWIN)
+        return;
+
+    if (s_verbose_input)
+        verbose_input(record);
+
+#ifdef FORCE_WIN10_16299_VT_INPUT
+
+    if (key_char)
+    {
+        if (s_verbose_input)
+            verbose_input(record);
+        input_push_wchar(key_char);
+        return;
+    }
+
+#else // !FORCE_WIN10_16299_VT_INPUT
+
+    vt_emulation(key_char, key_vk, key_sc, key_flags);
+
+#endif // !FORCE_WIN10_16299_VT_INPUT
+}
+
 static void read_console(DWORD _timeout, int peek)
 {
     assert(s_term.m_initialized);
@@ -768,10 +802,13 @@ int config_console(void)
     outmode = s_term.m_prevmodeout;
 
     inmode &= ~(ENABLE_PROCESSED_INPUT|ENABLE_LINE_INPUT|ENABLE_ECHO_INPUT|ENABLE_MOUSE_INPUT);
-    // inmode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
-    // outmode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+#ifdef FORCE_WIN10_16299_VT_INPUT
+    inmode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
+#endif
     SetConsoleMode(s_term.m_stdin, inmode);
-    // SetConsoleMode(s_term.m_stdout, outmode);
+
+    outmode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(s_term.m_stdout, outmode);
 
     s_term.m_dimensions = get_dimensions();
 
