@@ -89,11 +89,6 @@ typedef unsigned short      mode_t;
 #define HAVE_DIRENT_H 1
 #define WCHAR_T_BROKEN 1            // Visual Studio uses 2 byte wchar_t; Readline expects 4 byte wchar_t.
 
-// Readline uses __MSDOS__ for both platform-specific file handling and
-// terminal display, but with a sufficient implementation of the termcap
-// library then it isn't needed.
-#undef __MSDOS__
-
 // Work around quirk in complete.c
 #ifdef _WIN32
 #   define __WIN32__
