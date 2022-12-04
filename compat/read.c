@@ -704,7 +704,7 @@ static void process_input(const KEY_EVENT_RECORD* record)
 #endif // !FORCE_WIN10_16299_VT_INPUT
 }
 
-static void read_console(DWORD _timeout, int peek)
+static int read_console(DWORD _timeout, int peek)
 {
     assert(s_term.m_initialized);
 
@@ -725,12 +725,15 @@ static void read_console(DWORD _timeout, int peek)
     const unsigned int buffer_count = s_term.m_buffer_count;
     while (buffer_count == s_term.m_buffer_count)
     {
+        DWORD dwWait;
         DWORD modeExpected;
         const int has_mode = !!GetConsoleMode(s_term.m_stdout, &modeExpected);
 
         fix_console_input_mode();
 
-        WaitForSingleObject(s_term.m_stdin, INFINITE);
+        dwWait = WaitForSingleObject(s_term.m_stdin, _timeout);
+        if (dwWait != WAIT_OBJECT_0)
+            return false;
 
         if (has_mode)
             fix_console_output_mode(s_term.m_stdout, modeExpected);
@@ -773,6 +776,7 @@ static void read_console(DWORD _timeout, int peek)
 
 out:
     show_cursor(false);
+    return true;
 }
 
 /*
@@ -840,12 +844,30 @@ void unconfig_console(void)
     memset(&s_term, 0, sizeof(s_term));
 }
 
+static int calc_rl_timeout(DWORD* timeout)
+{
+    unsigned int secs;
+    unsigned int usecs;
+    switch (rl_timeout_remaining(&secs, &usecs))
+    {
+    case 0:     return false;
+    case -1:    *timeout = INFINITE; return true;
+    default:    *timeout = secs * 1000 + usecs / 1000; return true;
+    }
+}
+
 void input_select()
 {
     assert(s_term.m_initialized);
 
     if (!s_term.m_buffer_count)
-        read_console(INFINITE, false/*peek*/);
+    {
+        DWORD timeout;
+        if (!calc_rl_timeout(&timeout))
+            return;
+
+        read_console(timeout, false/*peek*/);
+    }
 }
 
 int input_read()
@@ -866,21 +888,20 @@ int input_read()
     return input_none_value;
 }
 
-int input_available(unsigned int _timeout)
+int input_available(void)
 {
-    const DWORD stop = GetTickCount() + _timeout;
-
     assert(s_term.m_initialized);
 
     while (!s_term.m_buffer_count)
     {
-        DWORD timeout = stop - GetTickCount();
-        if (timeout > _timeout)
-            timeout = 0;
+        DWORD timeout;
+        if (!calc_rl_timeout(&timeout))
+            return 0;
 
         // Read console input.  This is necessary to filter out OS events that
         // should not be processed as input.
-        read_console(timeout, true/*peek*/);
+        if (!read_console(timeout, true/*peek*/))
+            return 0;
 
         // If real input is available, break out.
         const unsigned char k = input_peek();
@@ -889,9 +910,6 @@ int input_available(unsigned int _timeout)
 
         // Eat the input.
         input_read();
-
-        if (!timeout)
-            break;
     }
     return s_term.m_buffer_count > 0;
 }

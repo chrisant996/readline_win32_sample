@@ -31,6 +31,8 @@ int main(int argc, char **argv)
 {
     if (getenv("VERBOSE_INPUT"))
         set_verbose_input(atoi(getenv("VERBOSE_INPUT")));
+    if (getenv("RL_TIMEOUT"))
+        rl_set_timeout(atoi(getenv("RL_TIMEOUT")), 0);
 
     // Set a Ctrl-C and Ctrl-Break handler to restore the console input and
     // output modes.  Otherwise input and output may not work properly in the
