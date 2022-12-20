@@ -1,66 +1,202 @@
 diff --git a/input.c b/input.c
-index 6f038d4..d96b478 100644
+index 6f038d4..fd98481 100644
 --- a/input.c
 +++ b/input.c
-@@ -140,18 +140,22 @@ win32_isatty (int fd)
+@@ -49,7 +49,11 @@
  
- /* I don't know how to set a timeout for _getch() in MinGW32, so we use
-    SIGALRM. */
-+#if !defined (_WIN32)
- #if (defined (HAVE_PSELECT) || defined (HAVE_SELECT)) && !defined (__MINGW32__)
- #  define RL_TIMEOUT_USE_SELECT
- #else
- #  define RL_TIMEOUT_USE_SIGALRM
+ #include <signal.h>
+ 
+-#include "posixselect.h"
++/* System-specific feature definitions and include files. */
++#include "rldefs.h"
++#include "rlmbutil.h"
++
++#include "posixselect.h" /* needs PARAMS macro defined (in rlstdc.h via rldefs.h) */
+ #include "posixtime.h"
+ 
+ #if defined (FIONREAD_IN_SYS_IOCTL)
+@@ -63,10 +67,6 @@
+ extern int errno;
+ #endif /* !errno */
+ 
+-/* System-specific feature definitions and include files. */
+-#include "rldefs.h"
+-#include "rlmbutil.h"
+-
+ /* Some standard library routines. */
+ #include "readline.h"
+ 
+@@ -136,24 +136,42 @@ win32_isatty (int fd)
+ #define isatty(x)	win32_isatty(x)
  #endif
-+#endif
  
+-/* Readline timeouts */
+-
+-/* I don't know how to set a timeout for _getch() in MinGW32, so we use
+-   SIGALRM. */
+-#if (defined (HAVE_PSELECT) || defined (HAVE_SELECT)) && !defined (__MINGW32__)
+-#  define RL_TIMEOUT_USE_SELECT
+-#else
+-#  define RL_TIMEOUT_USE_SIGALRM
++#if !defined (HAVE_GETTIMEOFDAY) && defined (_WIN32)
++typedef long long uint64_t;
++int gettimeofday(struct timeval * tp, struct timezone * tzp)
++{
++  /* EPOCH is the number of 100 nanosecond intervals from
++     January 1, 1601 (UTC) to January 1, 1970.
++     (the correct value has 9 trailing zeros) */
++  static const uint64_t EPOCH = ((uint64_t) 116444736000000000ULL);
++
++  SYSTEMTIME  system_time;
++  FILETIME    file_time;
++  uint64_t    time;
++
++  GetSystemTime(&system_time);
++  SystemTimeToFileTime(&system_time, &file_time);
++  time =  ((uint64_t)file_time.dwLowDateTime);
++  time += ((uint64_t)file_time.dwHighDateTime) << 32;
++
++  tp->tv_sec  = (long) ((time - EPOCH) / 10000000L);
++  tp->tv_usec = (long) (system_time.wMilliseconds * 1000);
++  return 0;
++}
+ #endif
+ 
++/* Readline timeouts */
++
  int rl_set_timeout (unsigned int, unsigned int);
  int rl_timeout_remaining (unsigned int *, unsigned int *);
  
  int _rl_timeout_init (void);
- int _rl_timeout_sigalrm_handler (void);
-+#if !defined (_WIN32)
+-int _rl_timeout_sigalrm_handler (void);
++int _rl_timeout_handle_sigalrm (void);
++#if defined (RL_TIMEOUT_USE_SELECT)
  int _rl_timeout_select (int, fd_set *, fd_set *, fd_set *, const struct timeval *, const sigset_t *);
 +#endif
  
- static void _rl_timeout_handle (void);
+-static void _rl_timeout_handle (void);
++void _rl_timeout_handle (void);
  #if defined (RL_TIMEOUT_USE_SIGALRM)
-@@ -551,6 +555,7 @@ reset_alarm ()
- #  endif
+ static int set_alarm (unsigned int *, unsigned int *);
+ static void reset_alarm (void);
+@@ -248,7 +266,7 @@ rl_gather_tyi (void)
+   register int tem, result;
+   int chars_avail, k;
+   char input;
+-#if defined(HAVE_SELECT)
++#if defined (HAVE_PSELECT) || defined (HAVE_SELECT)
+   fd_set readfds, exceptfds;
+   struct timeval timeout;
  #endif
+@@ -257,27 +275,45 @@ rl_gather_tyi (void)
+   input = 0;
+   tty = fileno (rl_instream);
  
-+#if !defined (_WIN32)
- /* Set a timeout which will be used for the next call of `readline
-    ()'.  When (0, 0) are specified the timeout is cleared.  */
- int
-@@ -561,6 +566,7 @@ rl_set_timeout (unsigned int secs, unsigned int usecs)
- 
-   return 0;
- }
-+#endif
- 
- /* Start measuring the time.  Returns 0 on success.  Returns -1 on
-    error. */
-@@ -649,6 +655,8 @@ rl_timeout_remaining (unsigned int *secs, unsigned int *usecs)
- 
- /* This should only be called if RL_TIMEOUT_USE_SELECT is defined. */
- 
-+#if !defined (_WIN32)
++  result = -1;
++
++  /* Providing rl_input_available_hook supersedes rl_set_timeout, as it
++     becomes impossible to reach _rl_timeout_select or _rl_timeout_handle.
++     The custom rl_input_available_hook function must call _rl_timeout_handle
++     internally when appropriate, in order for rl_set_timeout to fully work. */
++  if (rl_input_available_hook)
++    {
++      result = (*rl_input_available_hook) ();
++      if (result <= 0)
++	result = -1;
++    }
 +
  #if defined (HAVE_PSELECT) || defined (HAVE_SELECT)
+-  FD_ZERO (&readfds);
+-  FD_ZERO (&exceptfds);
+-  FD_SET (tty, &readfds);
+-  FD_SET (tty, &exceptfds);
+-  USEC_TO_TIMEVAL (_keyboard_input_timeout, timeout);
++  if (result == -1)
++    {
++      FD_ZERO (&readfds);
++      FD_ZERO (&exceptfds);
++      FD_SET (tty, &readfds);
++      FD_SET (tty, &exceptfds);
++      USEC_TO_TIMEVAL (_keyboard_input_timeout, timeout);
+ #if defined (RL_TIMEOUT_USE_SELECT)
+-  result = _rl_timeout_select (tty + 1, &readfds, (fd_set *)NULL, &exceptfds, &timeout, NULL);
++      result = _rl_timeout_select (tty + 1, &readfds, (fd_set *)NULL, &exceptfds, &timeout, NULL);
+ #else
+-  result = select (tty + 1, &readfds, (fd_set *)NULL, &exceptfds, &timeout);
++      result = select (tty + 1, &readfds, (fd_set *)NULL, &exceptfds, &timeout);
+ #endif
+-  if (result <= 0)
+-    return 0;	/* Nothing to read. */
++      if (result <= 0)
++	return 0;	/* Nothing to read. */
++    }
+ #endif
+ 
+-  result = -1;
+   errno = 0;
+ #if defined (FIONREAD)
+-  result = ioctl (tty, FIONREAD, &chars_avail);
+-  if (result == -1 && errno == EIO)
+-    return -1;
++  if (result == -1)
++    {
++      result = ioctl (tty, FIONREAD, &chars_avail);
++      if (result == -1 && errno == EIO)
++	return -1;
++    }
+   if (result == -1)
+     chars_avail = 0;
+ #endif
+@@ -304,10 +340,13 @@ rl_gather_tyi (void)
+ #endif /* O_NDELAY */
+ 
+ #if defined (__MINGW32__)
+-  /* Use getch/_kbhit to check for available console input, in the same way
+-     that we read it normally. */
+-   chars_avail = isatty (tty) ? _kbhit () : 0;
+-   result = 0;
++  if (result == -1)
++    {
++      /* Use getch/_kbhit to check for available console input, in the same way
++         that we read it normally. */
++      chars_avail = isatty (tty) ? _kbhit () : 0;
++      result = 0;
++    }
+ #endif
+ 
+   /* If there's nothing available, don't waste time trying to read
+@@ -377,6 +416,10 @@ _rl_input_available (void)
+ #endif
+   int tty;
+ 
++  /* Providing rl_input_available_hook supersedes rl_set_timeout, as it
++     becomes impossible to reach _rl_timeout_select or _rl_timeout_handle.
++     The custom rl_input_available_hook function must call _rl_timeout_handle
++     internally when appropriate, in order for rl_set_timeout to fully work. */
+   if (rl_input_available_hook)
+     return (*rl_input_available_hook) ();
+ 
+@@ -647,9 +690,7 @@ rl_timeout_remaining (unsigned int *secs, unsigned int *usecs)
+   return 1;
+ }
+ 
+-/* This should only be called if RL_TIMEOUT_USE_SELECT is defined. */
+-
+-#if defined (HAVE_PSELECT) || defined (HAVE_SELECT)
++#if defined (RL_TIMEOUT_USE_SELECT)
  int
  _rl_timeout_select (int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timeval *timeout, const sigset_t *sigmask)
-@@ -741,6 +749,9 @@ _rl_timeout_handle_sigalrm ()
- #endif
-   return -1;
+ {
+@@ -713,7 +754,7 @@ _rl_timeout_select (int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptf
  }
-+
-+#endif
-+
- /* **************************************************************** */
- /*								    */
- /*			     Character Input			    */
-@@ -818,7 +829,7 @@ rl_getc (FILE *stream)
+ #endif
+ 
+-static void
++void
+ _rl_timeout_handle ()
+ {
+   if (rl_timeout_event_hook)
+@@ -818,11 +859,11 @@ rl_getc (FILE *stream)
        /* We know at this point that _rl_caught_signal == 0 */
  
  #if defined (__MINGW32__)
@@ -69,13 +205,18 @@ index 6f038d4..d96b478 100644
  	return (_getch ());	/* "There is no error return." */
  #endif
        result = 0;
-@@ -877,7 +888,9 @@ rl_getc (FILE *stream)
+-#if defined (HAVE_PSELECT) || defined (HAVE_SELECT)
++#if defined (RL_TIMEOUT_USE_SELECT)
+       /* At this point, if we have pselect, we're using select/pselect for the
+ 	 timeouts. We handled MinGW above. */
+       FD_ZERO (&readfds);
+@@ -877,7 +918,9 @@ rl_getc (FILE *stream)
  
  /* fprintf(stderr, "rl_getc: result = %d errno = %d\n", result, errno); */
  
-+#if 0
++/* Unused; produces a compiler warning because it's unused.
  handle_error:
-+#endif
++*/
        /* If the error that we received was EINTR, then try again,
  	 this is simply an interrupted system call to read ().  We allow
  	 the read to be interrupted if we caught SIGHUP, SIGTERM, or any
@@ -105,7 +246,7 @@ index 4bca9c5..b2b1964 100644
    int absolute_offset, count;
  
 diff --git a/rldefs.h b/rldefs.h
-index 98577a6..dfb1320 100644
+index 98577a6..c67b385 100644
 --- a/rldefs.h
 +++ b/rldefs.h
 @@ -40,7 +40,7 @@
@@ -113,27 +254,54 @@ index 98577a6..dfb1320 100644
  #    define TERMIO_TTY_DRIVER
  #  else
 -#    if !defined (__MINGW32__)
-+#    if !defined (__MINGW32__) && !defined (_WIN32)
++#    if !defined (__MINGW32__) && !defined (_MSC_VER)
  #      define NEW_TTY_DRIVER
  #    else
  #      define NO_TTY_DRIVER
 diff --git a/rlprivate.h b/rlprivate.h
-index d87d07a..3e370b8 100644
+index d87d07a..ea8f88d 100644
 --- a/rlprivate.h
 +++ b/rlprivate.h
-@@ -303,10 +303,12 @@ extern int _rl_pushed_input_available (void);
+@@ -293,6 +293,19 @@ extern int _rl_current_display_line (void);
+ extern void _rl_refresh_line (void);
+ 
+ /* input.c */
++/* I don't know how to set a timeout for _getch() in MinGW32, so we use
++   SIGALRM. */
++#if defined (__MINGW32__)
++#  define RL_TIMEOUT_USE_SIGALRM
++#elif defined (HAVE_PSELECT) || defined (HAVE_SELECT)
++#  define RL_TIMEOUT_USE_SELECT
++#elif defined (_MSC_VER)
++/* MSVC doesn't have select or pselect, so rl_set_timeout() isn't supported
++   there.  A host can provide their own timeout implementation in custom
++   rl_getc_function and rl_input_available_hook functions. */
++#else
++#  define RL_TIMEOUT_USE_SIGALRM
++#endif
+ extern int _rl_any_typein (void);
+ extern int _rl_input_available (void);
+ extern int _rl_nchars_available (void);
+@@ -303,11 +316,18 @@ extern int _rl_pushed_input_available (void);
  
  extern int _rl_timeout_init (void);
  extern int _rl_timeout_handle_sigalrm (void);
-+#if !defined (_WIN32)
- #if defined (_POSIXSELECT_H_)
+-#if defined (_POSIXSELECT_H_)
++#if defined (RL_TIMEOUT_USE_SELECT)
  /* use as a sentinel for fd_set, struct timeval,  and sigset_t definitions */
  extern int _rl_timeout_select (int, fd_set *, fd_set *, fd_set *, const struct timeval *, const sigset_t *);
  #endif
-+#endif
  
++/* Providing a rl_input_available_hook function prevents the default input
++   handling from reaching _rl_timeout_handle if a timeout occurs.  So for
++   rl_set_timeout to work properly with a custom rl_getc_function and/or
++   rl_input_available_hook function, the custom functions must internally call
++   _rl_timeout_handle when appropriate. */
++extern void _rl_timeout_handle (void);
++
  /* isearch.c */
  extern _rl_search_cxt *_rl_scxt_alloc (int, int);
+ extern void _rl_scxt_dispose (_rl_search_cxt *, int);
 diff --git a/support/wcwidth.c b/support/wcwidth.c
 index 0f5ec99..c7e0d56 100644
 --- a/support/wcwidth.c
@@ -182,4 +350,35 @@ index 0f5ec99..c7e0d56 100644
 +int mk_wcswidth_cjk(const WCHAR_T *pwcs, size_t n)
  {
    int w, width = 0;
+ 
+diff --git a/terminal.c b/terminal.c
+index 9997161..e74f1ec 100644
+--- a/terminal.c
++++ b/terminal.c
+@@ -69,7 +69,7 @@
+ #include "rlshell.h"
+ #include "xmalloc.h"
+ 
+-#if defined (__MINGW32__)
++#if defined (_WIN32)
+ #  include <windows.h>
+ #  include <wincon.h>
+ 
+@@ -229,7 +229,7 @@ _emx_get_screensize (int *swp, int *shp)
+ }
+ #endif
+ 
+-#if defined (__MINGW32__)
++#if defined (_WIN32)
+ static void
+ _win_get_screensize (int *swp, int *shp)
+ {
+@@ -272,7 +272,7 @@ _rl_get_screen_size (int tty, int ignore_env)
+ 
+ #if defined (__EMX__)
+   _emx_get_screensize (&wc, &wr);
+-#elif defined (__MINGW32__)
++#elif defined (_WIN32)
+   _win_get_screensize (&wc, &wr);
+ #endif
  

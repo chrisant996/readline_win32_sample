@@ -94,23 +94,6 @@ typedef unsigned short      mode_t;
 #   define __WIN32__
 #endif
 
-// Readline 8.2 added usage of posixtime.h and posixselect.h, and does not
-// guard usage safely in Windows.  When building READLINE_LIBRARY, define the
-// timeval struct; otherwise use a forward reference to allow compilation
-// while avoiding collision with winsock.h.
-#define HAVE_TIMEVAL 1
-#if defined (READLINE_LIBRARY)
-struct timeval {
-    time_t tv_sec;
-    long tv_usec;
-};
-#else
-struct timeval;
-#endif
-#define HAVE_GETTIMEOFDAY 1
-typedef int sigset_t;               // satisfy compilation.
-extern int gettimeofday(struct timeval * tp, struct timezone * tzp);
-
 typedef int wcwidth_t (char32_t);
 typedef int wcswidth_t (const char32_t*, size_t);
 extern wcwidth_t *wcwidth;

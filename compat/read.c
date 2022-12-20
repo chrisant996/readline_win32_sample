@@ -707,10 +707,12 @@ static void process_input(const KEY_EVENT_RECORD* record)
 static int read_console(DWORD _timeout, int peek)
 {
     assert(s_term.m_initialized);
+    int ret = true;
 
     // Hide the cursor unless we're accepting input so we don't have to see it
     // jump around as the screen's drawn.
-    show_cursor(true);
+    if (!peek)
+        show_cursor(true);
 
     // Conhost restarts the cursor blink when writing to the console. It restarts
     // hidden which means that if you type faster than the blink the cursor turns
@@ -732,8 +734,18 @@ static int read_console(DWORD _timeout, int peek)
         fix_console_input_mode();
 
         dwWait = WaitForSingleObject(s_term.m_stdin, _timeout);
+        if (dwWait == WAIT_TIMEOUT)
+        {
+            // Report that timeout occurred, so it's possible to support the
+            // rl_set_timeout stuff.
+            ret = -1;
+            goto out;
+        }
         if (dwWait != WAIT_OBJECT_0)
-            return false;
+        {
+            ret = false;
+            goto out;
+        }
 
         if (has_mode)
             fix_console_output_mode(s_term.m_stdout, modeExpected);
@@ -775,14 +787,16 @@ static int read_console(DWORD _timeout, int peek)
     }
 
 out:
-    show_cursor(false);
-    return true;
+    if (!peek)
+        show_cursor(false);
+    return ret;
 }
 
 /*
  * Public terminal functions.
  */
 
+static int input_available(void);
 static int input_getc(FILE *stream);
 
 int config_console(void)
@@ -797,8 +811,12 @@ int config_console(void)
 
     if (!s_term.m_initialized)
     {
-        rl_getc_function = input_getc;
-        GetConsoleMode(s_term.m_stdin, &s_term.m_prevmodein);
+        // VT keyboard emulation is only needed when stdin is a console.
+        if (GetConsoleMode(s_term.m_stdin, &s_term.m_prevmodein))
+        {
+            rl_input_available_hook = input_available;
+            rl_getc_function = input_getc;
+        }
         GetConsoleMode(s_term.m_stdout, &s_term.m_prevmodeout);
         s_term.m_initialized = true;
     }
@@ -844,14 +862,14 @@ void unconfig_console(void)
     memset(&s_term, 0, sizeof(s_term));
 }
 
-static int calc_rl_timeout(DWORD* timeout)
+static int calc_rl_timeout(DWORD* timeout, DWORD def_timeout)
 {
     unsigned int secs;
     unsigned int usecs;
     switch (rl_timeout_remaining(&secs, &usecs))
     {
     case 0:     return false;
-    case -1:    *timeout = INFINITE; return true;
+    case -1:    *timeout = def_timeout; return -1;
     default:    *timeout = secs * 1000 + usecs / 1000; return true;
     }
 }
@@ -863,10 +881,14 @@ void input_select()
     if (!s_term.m_buffer_count)
     {
         DWORD timeout;
-        if (!calc_rl_timeout(&timeout))
-            return;
+        const int tmout_status = calc_rl_timeout(&timeout, INFINITE);
+        if (!tmout_status)
+            _rl_timeout_handle();
 
-        read_console(timeout, false/*peek*/);
+        const int r = read_console(timeout, false/*peek*/);
+
+        if (tmout_status > 0 && r < 0)
+            _rl_timeout_handle();
     }
 }
 
@@ -895,13 +917,26 @@ int input_available(void)
     while (!s_term.m_buffer_count)
     {
         DWORD timeout;
-        if (!calc_rl_timeout(&timeout))
-            return 0;
+        const int tmout_status = calc_rl_timeout(&timeout, 0);
+        if (!tmout_status)
+            _rl_timeout_handle();
+
+        // Using 100 milliseconds would match the 100000 microseconds in
+        // input.c, which seems to be for coalescing inputs.  Using 0 is more
+        // responsive, and coalescing doesn't seem beneficial on Windows.
+#if 0
+        timeout = 100;
+#else
+        timeout = 0;
+#endif
 
         // Read console input.  This is necessary to filter out OS events that
         // should not be processed as input.
-        if (!read_console(timeout, true/*peek*/))
+        const int r = read_console(timeout, true/*peek*/);
+        if (r == 0)
             return 0;
+        if (tmout_status > 0 && r < 0)
+            _rl_timeout_handle();
 
         // If real input is available, break out.
         const unsigned char k = input_peek();
@@ -910,6 +945,10 @@ int input_available(void)
 
         // Eat the input.
         input_read();
+
+        // If the timeout has been reached, break out.
+        if (r < 0)
+            break;
     }
     return s_term.m_buffer_count > 0;
 }
@@ -921,7 +960,7 @@ static int input_getc(FILE *stream)
 
     assert(s_term.m_initialized);
 
-    if (stream != rl_instream || !GetConsoleMode(s_term.m_stdin, &dummy))
+    if (stream != rl_instream)
         return rl_getc(stream);
 
     while (1)
