@@ -4,13 +4,15 @@ This repo demonstrates how to compile and link the [GNU Readline library](https:
 
 To learn how to configure Readline, and to identify what other integrations you may want to support (e.g. manage persistent history), read the [Readline documentation](https://tiswww.case.edu/php/chet/readline/rltop.html#Documentation).
 
-> **Note:** Be sure to read the Readline documentation.  Fair warning:  any questions that can be answered simply by reading the documentation will be answered with "please read the Readline documentation".
+> [!NOTE]
+> Be sure to read the Readline documentation.  Fair warning:  any questions that can be answered simply by reading the documentation will be answered with "please read the Readline documentation".
 
 The sample code in this repo is based on my experience with using Readline in the [Clink](https://github.com/chrisant996/clink) project, which enhances the CMD shell to use the Readline library for inputting and editing command lines.  Clink makes very specialized and sophisticated use of Readline (don't copy its approach; chances are 99.9999% that's not what you need), but this sample repo shows the basics so you can get started, and then you can determine how to proceed from there.
 
 **LICENSE:**  This sample is distributed under the [GNU General Public License v3](https://github.com/chrisant996/readline_win32_sample/blob/main/LICENSE).
 
-> **Warning:**  This sample is for illustration purposes only.  Do not use it in production software.  You are solely responsible for using Readline correctly and any problems that may arise.
+> [!WARNING]
+> This sample is for illustration purposes only.  Do not use it in production software.  You are solely responsible for using Readline correctly and any problems that may arise.
 
 ## Prequisites
 
